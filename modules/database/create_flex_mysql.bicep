@@ -15,6 +15,9 @@ param flex_db_subnet_cidr string = '10.0.6.0/24'
 
 param logAnalyticsPayGWorkspaceId string
 
+// param mysql_usr_admin_mgd_identity_name string
+
+
 // Get VNet Reference
 resource r_vnet 'Microsoft.Network/virtualNetworks@2021-02-01' existing= {
   name: vnetName
@@ -163,6 +166,65 @@ resource r_fw_rule_AllowAnyHost 'Microsoft.DBforMySQL/flexibleServers/firewallRu
 //   }
 // }
 
+/*
+// Create SQL User Admin Managed Identity Ref
+
+resource r_mysql_usr_admin_mgd_identity_ref 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing =  {
+  name: mysql_usr_admin_mgd_identity_name
+}
+
+// Add User.Read.All, GroupMember.Read.All, and Application.Read.ALL permissions to a UMI to access Microsoft Graph.
+// Directory Readers Permissions - https://learn.microsoft.com/en-us/azure/active-directory/roles/permissions-reference#directory-readers
+
+var managedGroupId = reference('/subscriptions/{subscription().subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Management/managementGroups/{managementGroupName}', '2020-05-01').id
+var directoryObjectId = list('Microsoft.Directory/directoryObjects', '2020-01-01').value[0].objectId
+
+
+resource r_directory_reader_customRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = {
+  name: 'Custom.IdentityPermissions'
+  properties: {
+    roleName: 'Identity Permissions'
+    description: 'Custom role for granting identity permissions'
+    assignableScopes: [
+      managedGroupId
+      '/providers/Microsoft.Directory/directoryObjects/${directoryObjectId}'
+      subscription().id
+    ]
+    permissions: [
+      {
+        actions: [
+          'Microsoft.Graph/users/read'
+        ]
+        notActions: []
+      }
+      {
+        actions: [
+          'Microsoft.Graph/groupMembers/read'
+        ]
+        notActions: []
+      }
+      {
+        actions: [
+          'Microsoft.Graph/applications/read'
+        ]
+        notActions: []
+      }
+    ]
+  }
+}
+
+
+resource r_attach_perms_to_role_DirectoryReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid('r_attach_perms_to_role_MetricsPublisher', r_mysql_usr_admin_mgd_identity_ref.id, 'r_directory_reader_customRole')
+  scope: resourceGroup()
+  properties: {
+    description: 'DirectoryReader'
+    roleDefinitionId: r_directory_reader_customRole.id
+    principalId: r_mysql_usr_admin_mgd_identity_ref.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+*/
 
 // OUTPUTS
 output module_metadata object = module_metadata

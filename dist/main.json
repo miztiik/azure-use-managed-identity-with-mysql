@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.17.1.54307",
-      "templateHash": "12731636557931320183"
+      "templateHash": "16426835704935627669"
     }
   },
   "parameters": {
@@ -64,6 +64,9 @@
           },
           "tags": {
             "value": "[parameters('tags')]"
+          },
+          "create_sql_admin_user": {
+            "value": true
           }
         },
         "template": {
@@ -73,7 +76,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.17.1.54307",
-              "templateHash": "7604186415119991904"
+              "templateHash": "11822349738405770959"
             }
           },
           "parameters": {
@@ -85,6 +88,10 @@
             },
             "tags": {
               "type": "object"
+            },
+            "create_sql_admin_user": {
+              "type": "bool",
+              "defaultValue": false
             }
           },
           "resources": [
@@ -92,6 +99,14 @@
               "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
               "apiVersion": "2023-01-31",
               "name": "[format('{0}_{1}_{2}', parameters('identityParams').identityNamePrefix, parameters('deploymentParams').enterprise_name_suffix, parameters('deploymentParams').global_uniqueness)]",
+              "location": "[parameters('deploymentParams').location]",
+              "tags": "[parameters('tags')]"
+            },
+            {
+              "condition": "[parameters('create_sql_admin_user')]",
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-01-31",
+              "name": "[format('mysql_user_admin_{0}_{1}', parameters('deploymentParams').enterprise_name_suffix, parameters('deploymentParams').global_uniqueness)]",
               "location": "[parameters('deploymentParams').location]",
               "tags": "[parameters('tags')]"
             }
@@ -112,6 +127,22 @@
             "usr_mgd_identity_name": {
               "type": "string",
               "value": "[format('{0}_{1}_{2}', parameters('identityParams').identityNamePrefix, parameters('deploymentParams').enterprise_name_suffix, parameters('deploymentParams').global_uniqueness)]"
+            },
+            "mysql_usr_admin_mgd_identity_id": {
+              "type": "string",
+              "value": "[if(parameters('create_sql_admin_user'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('mysql_user_admin_{0}_{1}', parameters('deploymentParams').enterprise_name_suffix, parameters('deploymentParams').global_uniqueness)), '')]"
+            },
+            "mysql_usr_admin_mgd_identity_clientId": {
+              "type": "string",
+              "value": "[if(parameters('create_sql_admin_user'), reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('mysql_user_admin_{0}_{1}', parameters('deploymentParams').enterprise_name_suffix, parameters('deploymentParams').global_uniqueness)), '2023-01-31').clientId, '')]"
+            },
+            "mysql_usr_admin_mgd_identity_principalId": {
+              "type": "string",
+              "value": "[if(parameters('create_sql_admin_user'), reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('mysql_user_admin_{0}_{1}', parameters('deploymentParams').enterprise_name_suffix, parameters('deploymentParams').global_uniqueness)), '2023-01-31').principalId, '')]"
+            },
+            "mysql_usr_admin_mgd_identity_name": {
+              "type": "string",
+              "value": "[if(parameters('create_sql_admin_user'), format('mysql_user_admin_{0}_{1}', parameters('deploymentParams').enterprise_name_suffix, parameters('deploymentParams').global_uniqueness), '')]"
             }
           }
         }
@@ -1810,6 +1841,9 @@
           "mysqlFlexDbParams": {
             "value": "[parameters('mysqlFlexDbParams')]"
           },
+          "mysql_usr_admin_mgd_identity_name": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}_{1}_usr_mgd_identity', parameters('deploymentParams').enterprise_name_suffix, parameters('deploymentParams').global_uniqueness)), '2022-09-01').outputs.mysql_usr_admin_mgd_identity_name.value]"
+          },
           "vnetName": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}_{1}_Vnet', parameters('vnetParams').vnetNamePrefix, parameters('deploymentParams').global_uniqueness)), '2022-09-01').outputs.vnetName.value]"
           },
@@ -1824,7 +1858,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.17.1.54307",
-              "templateHash": "8934710966600938507"
+              "templateHash": "4271991561947052105"
             }
           },
           "parameters": {
@@ -1852,6 +1886,9 @@
               "defaultValue": "10.0.6.0/24"
             },
             "logAnalyticsPayGWorkspaceId": {
+              "type": "string"
+            },
+            "mysql_usr_admin_mgd_identity_name": {
               "type": "string"
             }
           },
@@ -1987,6 +2024,7 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Resources/deployments', format('{0}_{1}_La', parameters('logAnalyticsWorkspaceParams').workspaceName, parameters('deploymentParams').global_uniqueness))]",
+        "[resourceId('Microsoft.Resources/deployments', format('{0}_{1}_usr_mgd_identity', parameters('deploymentParams').enterprise_name_suffix, parameters('deploymentParams').global_uniqueness))]",
         "[resourceId('Microsoft.Resources/deployments', format('{0}_{1}_Vm', parameters('vmParams').vmNamePrefix, parameters('deploymentParams').global_uniqueness))]",
         "[resourceId('Microsoft.Resources/deployments', format('{0}_{1}_Vnet', parameters('vnetParams').vnetNamePrefix, parameters('deploymentParams').global_uniqueness))]"
       ]

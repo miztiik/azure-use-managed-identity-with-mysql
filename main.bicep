@@ -30,6 +30,7 @@ module r_usr_mgd_identity 'modules/identity/create_usr_mgd_identity.bicep' = {
     deploymentParams:deploymentParams
     identityParams:identityParams
     tags: tags
+    create_sql_admin_user: true
   }
 }
 
@@ -163,6 +164,8 @@ module r_mysql 'modules/database/create_flex_mysql.bicep' = {
     deploymentParams:deploymentParams
     tags: tags
     mysqlFlexDbParams: mysqlFlexDbParams
+
+    // mysql_usr_admin_mgd_identity_name: r_usr_mgd_identity.outputs.mysql_usr_admin_mgd_identity_name
 
     vnetName: r_vnet.outputs.vnetName
 

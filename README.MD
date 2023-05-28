@@ -1,10 +1,12 @@
-# Connect security to Azure Database for Flexible MySQL with User Assigned Managed Identity
+# Connect securely to Azure Database for Flexible MySQL with User Assigned Managed Identity
 
 A simple demonstration to use User Assigned Identity with Azure MySQL for secure authentication
 
 ## 🎯 Solution
 
-![Miztiik Automation - Azure Virtual Machine to Azure Database for MySQL Flexible - Secure Connection](images/miztiik_architecture_azure_vm_to_azure_flexible_mysql_001.png)
+We will create two identities, one for administring the SQL users(aka control plane) and for interacting with the database and the data(ie. data plane operations)
+
+![Miztiik Automation - Connect securely to Azure Database for Flexible MySQL with User Assigned Managed Identity](images/miztiik_architecture_use_uami_with_mysql_001.png)
 
 1. ## 🧰 Prerequisites
 
@@ -49,6 +51,8 @@ A simple demonstration to use User Assigned Identity with Azure MySQL for secure
         - Install Azure Monitoring Agent
      - User Managed Identity - Identity attached to the VM with the following permissions,
         - Monitoring Metrics Publisher
+     - SQL Admin User Managed Identity - Identity attached to the VM with the following permissions,
+        - We will have to add **Directory Reader** privileges manullay to this identity, as it can couldn't be done through bicep
      - Azure Database for MySQL Server - Flexible
         - Admin User
         - Admin Password
@@ -66,108 +70,73 @@ A simple demonstration to use User Assigned Identity with Azure MySQL for secure
 
 5. ## 🔬 Testing the solution
 
+   - Add SQL Admin `Directory Reader` privileges - [Ref this doc][2]
+      ![Miztiik Automation - Connect securely to Azure Database for Flexible MySQL with User Assigned Managed Identity](images/miztiik_architecture_use_uami_with_mysql_003.png)
+      ![Miztiik Automation - Connect securely to Azure Database for Flexible MySQL with User Assigned Managed Identity](images/miztiik_architecture_use_uami_with_mysql_004.png)
+   - Enable AAD Authetication for Azure MySQL - [Ref this doc][3]
+      ![Miztiik Automation - Connect securely to Azure Database for Flexible MySQL with User Assigned Managed Identity](images/miztiik_architecture_use_uami_with_mysql_007.png)
+      ![Miztiik Automation - Connect securely to Azure Database for Flexible MySQL with User Assigned Managed Identity](images/miztiik_architecture_use_uami_with_mysql_006.png)
+      ![Miztiik Automation - Connect securely to Azure Database for Flexible MySQL with User Assigned Managed Identity](images/miztiik_architecture_use_uami_with_mysql_005.png)
+
+      You will need the client Id of the managed identity
+            ![Miztiik Automation - Connect securely to Azure Database for Flexible MySQL with User Assigned Managed Identity](images/miztiik_architecture_use_uami_with_mysql_002.png)
+
+      ```sql
+      mysql> SET aad_auth_validate_oids_in_tenant = OFF;
+      Query OK, 0 rows affected (0.02 sec)
+
+      mysql> CREATE AADUSER 'miztiik_aad_user' IDENTIFIED BY '3b9..d2cf';
+      Query OK, 0 rows affected (0.03 sec)
+      ```
+
+      Now we are all set, What have we done so far?
+      - Created a SQL Admin User Managed Identity - Gave it `Directory Reader` privileges
+      - Enabled AAD Authetication for Azure MySQL
+      - Created a AAD User `miztiik_aad_user` with the client id of the SQL User Managed Identity(Note: This is not the same as the SQL Admin User Managed Identity). This user will be used to connect to the database from the VM.
+
    - Login to your VM, You can find the public IP address in the resource blade. You can also get it from the Azure Portal. _You may also try connecting to the database from local machine if you have mysql client, In this case, lets use the Azure VM as it is already bootstrapped with the mysql client_
 
      ```bash
      ssh miztiik@<PUBLIC_IP_ADDRESS>
      ```
 
-   - You can find the Database Server anem balancer public IP address in the resource blade. You can also get it from the Azure Portal.
 
       ```bash
-      #!/bin/bash
+       # Connect to the database
+       HOST='store-backend-uami-with-mysql-db-001.mysql.database.azure.com'
+       PORT=3306
+       USERNAME='miztiik_aad_user'
 
-      # MySQL Server Details
-      HOST='store-backend-web-server-to-mysql-db-002.mysql.database.azure.com'
-      PORT=3306
-      USERNAME='miztiik@store-backend-web-server-to-mysql-db-002'
-      PASSWORD=''
+       # This is the client id of the user managed identity
+       # CLIENT_ID='3b9f63..cd2cf'
 
-      # Database and Table Details
-      DATABASE="miztiik_store_backend_db_2"
-      TABLE="store_events_2"
+       # Retrieve the access token
+       ACCESS_TOKEN=$(curl -s "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fossrdbms-aad.database.windows.net&client_id=$CLIENT_ID" -H Metadata:true | jq -r .access_token)
 
+       # echo $ACCESS_TOKEN
 
-      # Maximum record count for the for loop
-      RECORD_COUNT=10
-
-      # Connect to MySQL and create database
-      mysql -h "$HOST" -P "$PORT" -u "$USERNAME" -p"$PASSWORD" <<EOF
-      CREATE DATABASE $DATABASE;
-      EOF
-
-      # Switch to the newly created database
-      mysql -h "$HOST" -P "$PORT" -u "$USERNAME" -p"$PASSWORD" -e "USE $DATABASE;"
-
-      # Create table
-      mysql -h "$HOST" -P "$PORT" -u "$USERNAME" -p"$PASSWORD" -e "CREATE TABLE IF NOT EXISTS $DATABASE.$TABLE (id INT PRIMARY KEY, ts TIMESTAMP, msg VARCHAR(255));"
-
-      # Insert records using for loop
-      for ((i=1; i<=RECORD_COUNT; i++))
-      do
-      RANDOM_INCREMENT=$((RANDOM % 10 + 1))
-      MESSAGE="Hello World from Miztiiik $RANDOM_INCREMENT"
-      mysql -h "$HOST" -P "$PORT" -u "$USERNAME" -p"$PASSWORD" -e "INSERT INTO $DATABASE.$TABLE (id, ts, msg) VALUES ($i, CURRENT_TIMESTAMP, '$MESSAGE');"
-      done
-
-      # Verify inserted records
-      mysql -h "$HOST" -P "$PORT" -u "$USERNAME" -p"$PASSWORD" -e "SELECT * FROM $DATABASE.$TABLE;"
+       mysql -h $HOST --user $USERNAME --enable-cleartext-plugin --password=$ACCESS_TOKEN
       ```
 
-      You should see an output like this,
+      Verify the user details,
 
-      ```text
-      +----+---------------------+------------------------------+
-      | id | ts                  | msg                          |
-      +----+---------------------+------------------------------+
-      | 1  | 2023-05-28 09:20:30 | Hello World from Miztiiik 1  |
-      | 2  | 2023-05-28 09:20:30 | Hello World from Miztiiik 2  |
-      | 3  | 2023-05-28 09:20:30 | Hello World from Miztiiik 3  |
-      | 4  | 2023-05-28 09:20:30 | Hello World from Miztiiik 4  |
-      | 5  | 2023-05-28 09:20:30 | Hello World from Miztiiik 5  |
-      | 6  | 2023-05-28 09:20:30 | Hello World from Miztiiik 6  |
-      | 7  | 2023-05-28 09:20:30 | Hello World from Miztiiik 7  |
-      | 8  | 2023-05-28 09:20:30 | Hello World from Miztiiik 8  |
-      | 9  | 2023-05-28 09:20:30 | Hello World from Miztiiik 9  |
-      | 10 | 2023-05-28 09:20:30 | Hello World from Miztiiik 10 |
-      +----+---------------------+------------------------------+
+      ```sql
+
+      ```sql
+      mysql> SELECT USER(), CURRENT_USER();
+      +-------------------------------+--------------------+
+      | USER()                        | CURRENT_USER()     |
+      +-------------------------------+--------------------+
+      | miztiik_aad_user@20.238.78.77 | miztiik_aad_user@% |
+      +-------------------------------+--------------------+
+      1 row in set (0.00 sec)
+
+      mysql>
       ```
-
-      You can also try the same SQL Workbench or any other MySQL client.
-
-      ```sql
-      -- Create the database
-      CREATE DATABASE IF NOT EXISTS miztiik_store_backend_db_3;
-
-      -- Switch to the newly created database
-      USE miztiik_store_backend_db_3;
-
-      -- Create the table
-      CREATE TABLE IF NOT EXISTS store_events_3 (id INT PRIMARY KEY, ts TIMESTAMP, msg VARCHAR(255));
-
-
-      -- Create the stored procedure to insert records
-      DELIMITER //
-      CREATE PROCEDURE insert_records(IN num_records INT)
-      BEGIN
-         DECLARE i INT DEFAULT 1;
-         WHILE i <= num_records DO
-            INSERT INTO miztiik_store_backend_db_3.store_events_3 (id, ts, msg) VALUES (i, CURRENT_TIMESTAMP, CONCAT('Hello World from Miztiiik ', i));
-            SET i = i + 1;
-         END WHILE;
-      END //
-      DELIMITER ;
-
-      -- Call the stored procedure to insert 10 records
-      CALL insert_records(10);
-
-      -- Query the table
-      SELECT * FROM miztiik_store_backend_db_3.store_events_3;
-      ```sql
 
 6. ## 📒 Conclusion
 
-   In this demonstration, we have shown how to connect to Azure DB for Flexible Mysql from Azure VM, insert and retreive records.
+   In this demonstration, we have shown how to connect to Azure DB for Flexible MySQL using Managed Identities.
   
 7. ## 🧹 CleanUp
 
@@ -198,6 +167,9 @@ Thank you for your interest in contributing to our project. Whether it is a bug 
 
 ### 📚 References
 
+1. [Azure Docs: Connect with Managed Identity to Azure Database for MySQL][1]
+1. [Azure Docs: Assign Directory Readers role to an Azure AD group][2]
+1. [Azure Docs: Connect with Managed Identity to Azure Database for MySQL][3]
 1. [Azure Docs: Just In Time Access][10]
 
 ### 🏷️ Metadata
@@ -206,6 +178,9 @@ Thank you for your interest in contributing to our project. Whether it is a bug 
 
 **Level**: 100
 
+[1]: https://learn.microsoft.com/en-us/azure/mysql/single-server/how-to-connect-with-managed-identity
+[2]: https://learn.microsoft.com/en-us/azure/azure-sql/database/authentication-aad-directory-readers-role-tutorial?view=azuresql
+[3]: https://learn.microsoft.com/en-us/azure/mysql/single-server/how-to-connect-with-managed-identity
 [10]: https://learn.microsoft.com/en-us/azure/defender-for-cloud/just-in-time-access-usage
 
 [100]: https://www.udemy.com/course/aws-cloud-security/?referralCode=B7F1B6C78B45ADAF77A9
